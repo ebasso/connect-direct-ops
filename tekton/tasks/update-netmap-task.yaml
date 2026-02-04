@@ -1,0 +1,149 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: update-netmap-config
+spec:
+  description: |
+    Updates the Connect:Direct netmap.cfg configuration file with backup, validation, and cfgcheck.
+    Supports both append and replace modes.
+    Reads configuration from a ConfigMap and updates the file in the PVC.
+  params:
+    - name: node-name
+      type: string
+      description: Connect:Direct node name
+      default: "CDNODE01"
+    - name: update-mode
+      type: string
+      description: Update mode - 'append' or 'replace'
+      default: "append"
+    - name: pvc-name
+      type: string
+      description: PersistentVolumeClaim name for Connect:Direct configuration
+      default: "s0-ibm-connect-direct-pvc"
+    - name: run-cfgcheck
+      type: string
+      description: Whether to run cfgcheck validation (true/false)
+      default: "true"
+    - name: image
+      type: string
+      description: Container image to use for the task
+      default: "cp.icr.io/cp/ibm-connectdirect/cdu:6.4.0.4-iFix011-2026-01-13"
+      #default: "registry.access.redhat.com/ubi9/ubi-minimal:latest"
+  stepTemplate:
+    env:
+      - name: HOME
+        value: /tekton/home
+  steps:
+    - name: update-and-validate-config
+      image: $(params.image)
+      script: |
+        #!/bin/bash
+        set -e
+        set -x
+        
+        NODE_NAME="$(params.node-name)"
+        UPDATE_MODE="$(params.update-mode)"
+        RUN_CFGCHECK="$(params.run-cfgcheck)"
+        
+        CONFIG_FILE="/opt/cdunix/ndm/cfg/${NODE_NAME}/netmap.cfg"
+        CONFIG_TMP="${CONFIG_FILE}.tmp.$$"
+
+        if [ "$UPDATE_MODE" = "replace" ]; then
+          CM_CONFIG_FILE="/opt/cdfiles/configs/netmap_full.cfg"
+        else
+          CM_CONFIG_FILE="/opt/cdfiles/configs/netmap.cfg"
+        fi
+        RET_CODE=4
+
+        # ====================================================
+        # Validate ConfigMap file exists and is not empty
+        echo "INFO: Validating configuration from ConfigMap..."
+        if [ ! -f "$CM_CONFIG_FILE" ]; then
+          echo "ERROR: Configuration file not found in ConfigMap at $CM_CONFIG_FILE"
+          exit 1
+        elif [ ! -s "$CM_CONFIG_FILE" ]; then
+          echo "ERROR: Configuration file is empty"
+          exit 1
+        fi
+        
+        # Determine which source file to use based on mode
+        if [ "$UPDATE_MODE" = "replace" ]; then
+          if ! cp "$CM_CONFIG_FILE" "$CONFIG_TMP"; then
+            echo "ERROR: Failed to copy existing netmap to temporary file"
+            exit 1
+          fi
+        else
+          if ! cp "$CONFIG_FILE" "$CONFIG_TMP"; then
+            echo "ERROR: Failed to copy existing netmap to temporary file"
+            exit 1
+          fi
+
+          # Add a newline before appending new configuration
+          echo "" >> "$CONFIG_TMP" 
+          
+          if ! cat "$CM_CONFIG_FILE" >> "$CONFIG_TMP"; then
+            echo "ERROR: Failed to append configuration to temporary file"
+            exit 1
+          fi
+        fi
+
+        echo "INFO: Configuration validation passed"
+        echo "INFO: ConfigMap content:"
+        cat "$CM_CONFIG_FILE"
+        echo ""
+        
+        # ====================================================
+        # Run cfgcheck validation on new configuration from ConfigMap
+        if [ "$RUN_CFGCHECK" = "true" ]; then
+          echo "INFO: Running cfgcheck validation on new configuration from ConfigMap"
+          /opt/cdunix/ndm/bin/cfgcheck -f "$CONFIG_TMP" 2>&1 | tee /tmp/cfgcheck_new.log
+          ret=$?
+          if [ $ret -gt $RET_CODE ]; then
+            echo "ERROR: cfgcheck failed for new netmap configuration with code $ret (max allowed: $RET_CODE) - aborting"
+            cat /tmp/cfgcheck_new.log
+            exit 1
+          fi
+          echo "INFO: cfgcheck validation passed for new configuration (return code: $ret)"
+        else
+          echo "INFO: Skipping cfgcheck validation (run-cfgcheck=false)"
+        fi
+        echo ""
+        
+        # ====================================================
+        # Backup existing configuration
+        if [ -f "$CONFIG_FILE" ]; then
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          BACKUP_FILE="${CONFIG_FILE}.backup.${TIMESTAMP}"
+          echo "INFO: Creating backup: $BACKUP_FILE"
+          if ! cp "$CONFIG_FILE" "$BACKUP_FILE"; then
+            echo "ERROR: Failed to create backup"
+            exit 1
+          fi
+          echo "INFO: Backup created successfully"
+        fi
+        
+        # ====================================================
+        # Process based on update mode
+        echo "INFO: update configuration"       
+        if ! cp "$CONFIG_TMP" "$CONFIG_FILE"; then
+          echo "ERROR: Failed to update netmap configuration file"
+          exit 1
+        fi
+        echo "INFO: Configuration updated successfully"
+          
+        # Clean up temporary file
+        rm -f "$CONFIG_TMP"
+      volumeMounts:
+        - name: cm-cd-userfiles
+          mountPath: /opt/cdfiles/configs
+        - name: cd-vol-cfg
+          mountPath: /opt/cdunix/ndm/cfg
+          subPath: CFG
+
+  volumes:
+    - name: cm-cd-userfiles
+      configMap:
+        name: cd-userfiles
+    - name: cd-vol-cfg
+      persistentVolumeClaim:
+        claimName: $(params.pvc-name)

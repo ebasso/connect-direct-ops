@@ -1,0 +1,44 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: update-userfile-pipeline
+spec:
+  description: |
+    Pipeline to update Connect:Direct userfile.cfg configuration.
+    Reads configuration from ConfigMap and updates the file in PVC with backup.
+  params:
+    - name: node-name
+      type: string
+      description: Connect:Direct node name
+      default: "CDNODE01"
+    - name: update-mode
+      type: string
+      description: Update mode - 'append' or 'replace'
+      default: "append"
+    - name: pvc-name
+      type: string
+      description: PersistentVolumeClaim name for Connect:Direct configuration
+      default: "s0-ibm-connect-direct-pvc"
+    - name: image
+      type: string
+      description: Container image to use for the task
+      default: "cp.icr.io/cp/ibm-connectdirect/cdu:6.4.0.4-iFix011-2026-01-13"
+    - name: run-cfgcheck
+      type: string
+      description: Whether to run cfgcheck validation (true/false)
+      default: "true"
+  tasks:
+    - name: update-userfile
+      taskRef:
+        name: update-userfile-config
+      params:
+        - name: node-name
+          value: $(params.node-name)
+        - name: update-mode
+          value: $(params.update-mode)
+        - name: pvc-name
+          value: $(params.pvc-name)
+        - name: image
+          value: $(params.image)
+        - name: run-cfgcheck
+          value: $(params.run-cfgcheck)

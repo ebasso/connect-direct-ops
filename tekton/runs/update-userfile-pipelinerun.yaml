@@ -1,0 +1,22 @@
+apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
+metadata:
+  generateName: update-userfile-run-
+spec:
+  pipelineRef:
+    name: update-userfile-pipeline
+  params:
+    - name: node-name
+      value: "CDNODE01"
+    - name: update-mode
+      value: "replace"
+    - name: pvc-name
+      value: "s0-ibm-connect-direct-pvc"
+    - name: run-cfgcheck
+      value: "true"
+    - name: image
+      value: "cp.icr.io/cp/ibm-connectdirect/cdu:6.4.0.4-iFix011-2026-01-13"
+  serviceAccountName: tekton-pipeline-sa
+
+# To run cfgcheck you must provide Connect:Direct Unix container image
+# Set run-cfgcheck to "false" to skip validation (useful for testing or when using non-CD images)

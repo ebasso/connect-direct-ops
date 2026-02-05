@@ -10,9 +10,8 @@ This repository provides Tekton resources to automate updates to Connect:Direct 
 
 - Kubernetes cluster with Tekton Pipelines installed
 - kubectl configured to access your cluster
-- Connect:Direct running in namespace: `sterling-cdnode01-dev01`
+- Connect:Direct deployed and running in namespace: `sterling-cdnode01-dev01`
 - Existing PVC: `s0-ibm-connect-direct-pvc`
-- Configuration path: `/opt/cdunix/ndm/cfg`
 
 ## Quick Start
 
@@ -34,26 +33,16 @@ kubectl apply -f tekton/pipelines/ -n $NAMESPACE
 
 ### 2. Create ConfigMap
 
-Edit the example files in `examples/` directory with your configurations, then create the ConfigMap:
+Copy the example files from `examples/` directory, do the changes and create the configmap:
 
 ```bash
-kubectl create configmap cd-userfiles \
-  --from-file=netmap.cfg=examples/netmap.cfg \
-  --from-file=userfile.cfg=examples/userfile.cfg \
-  --from-file=netmap_full.cfg=examples/netmap_full.cfg \
-  --from-file=userfile_full.cfg=examples/userfile_full.cfg \
-  -n sterling-cdnode01-dev01
-```
+cp examples/*.cfg custom/.
 
-Or create from your own files:
-
-```bash
-# Create ConfigMap from your files or complete files
 kubectl create configmap cd-userfiles \
-  --from-file=netmap.cfg=/path/to/your/netmap.cfg \
-  --from-file=userfile.cfg=/path/to/your/userfile.cfg \
-  --from-file=netmap_full.cfg=/path/to/your/netmap_full.cfg \
-  --from-file=userfile_full.cfg=/path/to/your/userfile_full.cfg \
+  --from-file=netmap.cfg=custom/netmap.cfg \
+  --from-file=userfile.cfg=custom/userfile.cfg \
+  --from-file=netmap_full.cfg=custom/netmap_full.cfg \
+  --from-file=userfile_full.cfg=custom/userfile_full.cfg \
   -n sterling-cdnode01-dev01
 ```
 
